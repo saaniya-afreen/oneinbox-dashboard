@@ -9,10 +9,23 @@ export class ApiError extends Error {
   }
 }
 
+function formatDetail(detail) {
+  if (typeof detail === 'string') return detail
+  if (Array.isArray(detail)) {
+    return detail.map((item) => item.msg || item.message || String(item)).join(', ')
+  }
+  return null
+}
+
 async function parseError(res) {
   try {
     const body = await res.json()
-    return body.message || body.error || body.detail || res.statusText
+    return (
+      formatDetail(body.detail) ||
+      body.message ||
+      body.error ||
+      res.statusText
+    )
   } catch {
     return res.statusText
   }
