@@ -46,6 +46,8 @@ export async function request(path, options = {}) {
   const res = await fetch(`${API_BASE}${path}`, {
     ...fetchOptions,
     headers,
+  }).catch(() => {
+    throw new ApiError('Network error — could not reach the API.', 0)
   })
 
   if (res.status === 401 && !skipAuth) {
