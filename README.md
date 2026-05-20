@@ -21,11 +21,11 @@ Open http://localhost:5173
 
 | Variable | Description |
 | --- | --- |
-| `VITE_API_URL` | OneInbox API base URL (default: `http://13.207.23.185:8000`) |
+| `VITE_API_URL` | OneInbox API base URL (default: `https://api.oneinbox.ai`) |
 
 In development, leave `VITE_API_URL` empty to use the Vite proxy (`/v1` → API server) and avoid CORS issues.
 
-For production builds, set `VITE_API_URL` to your API URL. The API must allow CORS from your dashboard origin, or serve the dashboard behind the same domain.
+On Vercel, production uses `vercel.json` to proxy `/v1` → `https://api.oneinbox.ai` so the browser stays on the dashboard origin.
 
 ## Build
 
