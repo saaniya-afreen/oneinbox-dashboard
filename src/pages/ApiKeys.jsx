@@ -7,6 +7,7 @@ import {
   logout,
   normalizeKeyList,
   revokeApiKey,
+  rotateApiKey,
 } from '../api/client'
 import { clearToken } from '../auth'
 
@@ -72,7 +73,16 @@ function IconTrash() {
   )
 }
 
-function KeyRow({ keyData, fullKey, onRevokeClick, revoking }) {
+function IconRotate() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <polyline points="23 4 23 10 17 10" />
+      <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+    </svg>
+  )
+}
+
+function KeyRow({ keyData, fullKey, onRevokeClick, onRotateClick, revoking, rotating }) {
   const [revealed, setRevealed] = useState(false)
   const [copied, setCopied] = useState(false)
 
@@ -93,8 +103,18 @@ function KeyRow({ keyData, fullKey, onRevokeClick, revoking }) {
           <IconKey />
         </div>
         <div>
-          <div className="key-row-name">{keyData.name || 'API Key'}</div>
-          <div className="key-row-date">{formatDate(keyData.created_at)}</div>
+          <div className="key-row-name">
+            {keyData.name || 'API Key'}
+            {keyData.scopes && keyData.scopes.length > 0 && (
+              <span className="key-row-scopes">{keyData.scopes.join(', ')}</span>
+            )}
+          </div>
+          <div className="key-row-date">
+            Created {formatDate(keyData.created_at)}
+            {keyData.last_used_at && (
+              <span> &middot; Last used {formatDate(keyData.last_used_at)}</span>
+            )}
+          </div>
         </div>
       </div>
 
@@ -120,6 +140,15 @@ function KeyRow({ keyData, fullKey, onRevokeClick, revoking }) {
           </button>
           <button
             type="button"
+            className="icon-btn"
+            title="Rotate"
+            onClick={() => onRotateClick(keyData)}
+            disabled={rotating}
+          >
+            <IconRotate />
+          </button>
+          <button
+            type="button"
             className="icon-btn icon-btn-danger"
             title="Revoke"
             onClick={() => onRevokeClick(keyData)}
@@ -140,6 +169,7 @@ export default function ApiKeys() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [revokingId, setRevokingId] = useState(null)
+  const [rotatingId, setRotatingId] = useState(null)
 
   const [showCreate, setShowCreate] = useState(false)
   const [newKeyName, setNewKeyName] = useState('')
@@ -148,6 +178,7 @@ export default function ApiKeys() {
   const [revealedKey, setRevealedKey] = useState(null)
   const [copied, setCopied] = useState(false)
   const [keyToRevoke, setKeyToRevoke] = useState(null)
+  const [keyToRotate, setKeyToRotate] = useState(null)
   const [sessionKeys, setSessionKeys] = useState(() => {
     try {
       return JSON.parse(sessionStorage.getItem('oneinbox_full_keys') || '{}')
@@ -159,6 +190,15 @@ export default function ApiKeys() {
   const saveSessionKey = useCallback((id, apiKey) => {
     setSessionKeys((prev) => {
       const next = { ...prev, [id]: apiKey }
+      sessionStorage.setItem('oneinbox_full_keys', JSON.stringify(next))
+      return next
+    })
+  }, [])
+
+  const removeSessionKey = useCallback((id) => {
+    setSessionKeys((prev) => {
+      const next = { ...prev }
+      delete next[id]
       sessionStorage.setItem('oneinbox_full_keys', JSON.stringify(next))
       return next
     })
@@ -223,18 +263,35 @@ export default function ApiKeys() {
     try {
       await revokeApiKey(keyToRevoke.id)
       setKeys((prev) => prev.filter((k) => k.id !== keyToRevoke.id))
-      setSessionKeys((prev) => {
-        const next = { ...prev }
-        delete next[keyToRevoke.id]
-        sessionStorage.setItem('oneinbox_full_keys', JSON.stringify(next))
-        return next
-      })
+      removeSessionKey(keyToRevoke.id)
       setKeyToRevoke(null)
     } catch (err) {
       setError(err.message || 'Failed to revoke API key')
       await load()
     } finally {
       setRevokingId(null)
+    }
+  }
+
+  async function confirmRotate() {
+    if (!keyToRotate) return
+
+    setError('')
+    setRotatingId(keyToRotate.id)
+    try {
+      const rotated = await rotateApiKey(keyToRotate.id)
+      // Store the new key value — it is the full api_key or nested under api_key
+      const newKeyValue = rotated?.api_key || rotated?.key
+      if (keyToRotate.id && newKeyValue) {
+        saveSessionKey(keyToRotate.id, newKeyValue)
+      }
+      setKeyToRotate(null)
+      setRevealedKey({ ...keyToRotate, api_key: newKeyValue })
+      await load()
+    } catch (err) {
+      setError(err.message || 'Failed to rotate API key')
+    } finally {
+      setRotatingId(null)
     }
   }
 
@@ -303,7 +360,9 @@ export default function ApiKeys() {
                   keyData={key}
                   fullKey={sessionKeys[key.id]}
                   onRevokeClick={setKeyToRevoke}
+                  onRotateClick={setKeyToRotate}
                   revoking={revokingId === key.id}
+                  rotating={rotatingId === key.id}
                 />
               ))}
             </div>
@@ -375,10 +434,40 @@ export default function ApiKeys() {
         </div>
       )}
 
+      {keyToRotate && (
+        <div className="overlay" onClick={() => setKeyToRotate(null)}>
+          <div className="modal card" onClick={(e) => e.stopPropagation()}>
+            <h2>Rotate API key?</h2>
+            <p className="muted">
+              <strong>{keyToRotate.name || 'API Key'}</strong> will be replaced
+              with a new key. The old key will stop working immediately.
+            </p>
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="btn ghost"
+                onClick={() => setKeyToRotate(null)}
+                disabled={rotatingId === keyToRotate.id}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn add-key"
+                onClick={confirmRotate}
+                disabled={rotatingId === keyToRotate.id}
+              >
+                {rotatingId === keyToRotate.id ? 'Rotating…' : 'Rotate key'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {revealedKey && (
         <div className="overlay" onClick={() => setRevealedKey(null)}>
           <div className="modal card" onClick={(e) => e.stopPropagation()}>
-            <h2>API key created</h2>
+            <h2>API key {revealedKey._rotated ? 'rotated' : 'created'}</h2>
             <p className="warning">
               Copy this key now. You won&apos;t be able to see it again.
             </p>

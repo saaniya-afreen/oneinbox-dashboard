@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from 'react-router-dom'
 import { isAuthenticated } from './auth'
 import ApiKeys from './pages/ApiKeys'
 import Login from './pages/Login'
+import Signup from './pages/Signup'
 
 function RequireAuth({ children }) {
   if (!isAuthenticated()) {
@@ -25,6 +26,14 @@ export default function App() {
         element={
           <RedirectIfAuth>
             <Login />
+          </RedirectIfAuth>
+        }
+      />
+      <Route
+        path="/signup"
+        element={
+          <RedirectIfAuth>
+            <Signup />
           </RedirectIfAuth>
         }
       />
