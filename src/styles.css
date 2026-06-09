@@ -411,6 +411,33 @@ form input:focus {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
+.auth-footer {
+  margin-top: 1.25rem;
+  text-align: center;
+  font-size: 0.875rem;
+}
+
+.auth-link {
+  color: #6366f1;
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.auth-link:hover {
+  text-decoration: underline;
+}
+
+.key-row-scopes {
+  display: inline-block;
+  margin-left: 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 400;
+  color: #6b7280;
+  background: #f3f4f6;
+  padding: 0.125rem 0.375rem;
+  border-radius: 4px;
+}
+
 @media (max-width: 768px) {
   .key-row {
     flex-direction: column;

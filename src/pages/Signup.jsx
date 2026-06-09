@@ -1,12 +1,14 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { login } from '../api/client'
+import { signup } from '../api/client'
 import { setToken } from '../auth'
 
-export default function Login() {
+export default function Signup() {
   const navigate = useNavigate()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [organizationName, setOrganizationName] = useState('')
+  const [name, setName] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -16,14 +18,14 @@ export default function Login() {
     setLoading(true)
 
     try {
-      const data = await login(email, password)
+      const data = await signup(email, password, organizationName.trim(), name.trim() || undefined)
       if (!data?.access_token) {
         throw new Error('No access token returned')
       }
       setToken(data.access_token)
       navigate('/api-keys', { replace: true })
     } catch (err) {
-      setError(err.message || 'Login failed')
+      setError(err.message || 'Signup failed')
     } finally {
       setLoading(false)
     }
@@ -33,10 +35,33 @@ export default function Login() {
     <div className="page-center">
       <div className="card auth-card">
         <img src="/logo.svg" alt="OneInbox" className="logo" />
-        <h1>Log in</h1>
-        <p className="muted">Manage your OneInbox API keys.</p>
+        <h1>Create account</h1>
+        <p className="muted">Start managing your OneInbox API keys.</p>
 
         <form onSubmit={handleSubmit}>
+          <label>
+            Organization name
+            <input
+              type="text"
+              value={organizationName}
+              onChange={(e) => setOrganizationName(e.target.value)}
+              required
+              autoComplete="organization"
+              placeholder="Acme Inc."
+            />
+          </label>
+
+          <label>
+            Your name <span className="muted">(optional)</span>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              autoComplete="name"
+              placeholder="Jane Smith"
+            />
+          </label>
+
           <label>
             Email
             <input
@@ -56,7 +81,7 @@ export default function Login() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
-              autoComplete="current-password"
+              autoComplete="new-password"
               placeholder="••••••••"
             />
           </label>
@@ -64,14 +89,14 @@ export default function Login() {
           {error && <p className="error">{error}</p>}
 
           <button type="submit" className="btn primary" disabled={loading}>
-            {loading ? 'Logging in…' : 'Log in'}
+            {loading ? 'Creating account…' : 'Create account'}
           </button>
         </form>
 
         <p className="auth-footer muted">
-          Don&apos;t have an account?{' '}
-          <Link to="/signup" className="auth-link">
-            Sign up
+          Already have an account?{' '}
+          <Link to="/login" className="auth-link">
+            Log in
           </Link>
         </p>
       </div>
