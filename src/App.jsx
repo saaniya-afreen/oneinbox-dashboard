@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { isAuthenticated } from './auth'
 import ApiKeys from './pages/ApiKeys'
+import PublishableKeys from './pages/PublishableKeys'
 import Login from './pages/Login'
 import Signup from './pages/Signup'
 
@@ -42,6 +43,14 @@ export default function App() {
         element={
           <RequireAuth>
             <ApiKeys />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/publishable-keys"
+        element={
+          <RequireAuth>
+            <PublishableKeys />
           </RequireAuth>
         }
       />
