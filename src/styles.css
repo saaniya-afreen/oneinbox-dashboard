@@ -155,6 +155,37 @@ body {
   color: #ea580c;
 }
 
+.keys-card-icon-public {
+  background: #eff6ff;
+  color: #2563eb;
+}
+
+.keys-tabs {
+  display: flex;
+  gap: 0.25rem;
+  margin-bottom: 1.25rem;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.keys-tab {
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #6b7280;
+  text-decoration: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+
+.keys-tab:hover {
+  color: #374151;
+}
+
+.keys-tab-active {
+  color: #6366f1;
+  border-bottom-color: #6366f1;
+}
+
 .keys-list {
   display: flex;
   flex-direction: column;

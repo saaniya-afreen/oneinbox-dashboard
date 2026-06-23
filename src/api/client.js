@@ -103,3 +103,18 @@ export function normalizeKeyList(data) {
   if (data?.data) return data.data
   return []
 }
+
+export function listPublishableKeys() {
+  return request('/v1/publishable-keys')
+}
+
+export function createPublishableKey(name, allowedOrigins) {
+  return request('/v1/publishable-keys', {
+    method: 'POST',
+    body: JSON.stringify({ name, allowed_origins: allowedOrigins }),
+  })
+}
+
+export function revokePublishableKey(keyId) {
+  return request(`/v1/publishable-keys/${keyId}`, { method: 'DELETE' })
+}

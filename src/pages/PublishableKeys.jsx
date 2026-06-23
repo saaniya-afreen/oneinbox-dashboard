@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate, NavLink } from 'react-router-dom'
 import {
-  createApiKey,
+  createPublishableKey,
   getMe,
-  listApiKeys,
+  listPublishableKeys,
   logout,
   normalizeKeyList,
-  revokeApiKey,
+  revokePublishableKey,
 } from '../api/client'
 import { clearToken } from '../auth'
 
@@ -24,8 +24,18 @@ function formatDate(value) {
 }
 
 function maskKey(key) {
-  const prefix = key.key_prefix || 'oi_sk_'
+  const prefix = key.key_prefix || 'oi_pk_'
   return `${prefix}${'•'.repeat(28)}`
+}
+
+function IconGlobe() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <circle cx="12" cy="12" r="10" />
+      <line x1="2" y1="12" x2="22" y2="12" />
+      <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+    </svg>
+  )
 }
 
 function IconKey() {
@@ -79,8 +89,9 @@ function KeyRow({ keyData, fullKey, onRevokeClick, revoking }) {
   const displayValue = revealed && fullKey ? fullKey : maskKey(keyData)
 
   async function handleCopy() {
-    if (!fullKey) return
-    await navigator.clipboard.writeText(fullKey)
+    const text = fullKey || keyData.key_prefix || ''
+    if (!text) return
+    await navigator.clipboard.writeText(text)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }
@@ -92,8 +103,15 @@ function KeyRow({ keyData, fullKey, onRevokeClick, revoking }) {
           <IconKey />
         </div>
         <div>
-          <div className="key-row-name">{keyData.name || 'API Key'}</div>
-          <div className="key-row-date">{formatDate(keyData.created_at)}</div>
+          <div className="key-row-name">{keyData.name || 'Publishable Key'}</div>
+          <div className="key-row-date">
+            {formatDate(keyData.created_at)}
+            {keyData.allowed_origins?.length > 0 && (
+              <span style={{ marginLeft: '0.5rem', color: '#6366f1' }}>
+                {keyData.allowed_origins.length} origin{keyData.allowed_origins.length !== 1 ? 's' : ''}
+              </span>
+            )}
+          </div>
         </div>
       </div>
 
@@ -112,9 +130,8 @@ function KeyRow({ keyData, fullKey, onRevokeClick, revoking }) {
           <button
             type="button"
             className="icon-btn"
-            title={!fullKey ? 'Full key only available at creation — create a new key' : copied ? 'Copied!' : 'Copy'}
+            title={copied ? 'Copied' : 'Copy'}
             onClick={handleCopy}
-            disabled={!fullKey}
           >
             <IconCopy />
           </button>
@@ -133,7 +150,7 @@ function KeyRow({ keyData, fullKey, onRevokeClick, revoking }) {
   )
 }
 
-export default function ApiKeys() {
+export default function PublishableKeys() {
   const navigate = useNavigate()
   const [keys, setKeys] = useState([])
   const [user, setUser] = useState(null)
@@ -143,6 +160,7 @@ export default function ApiKeys() {
 
   const [showCreate, setShowCreate] = useState(false)
   const [newKeyName, setNewKeyName] = useState('')
+  const [newOrigins, setNewOrigins] = useState('')
   const [creating, setCreating] = useState(false)
 
   const [revealedKey, setRevealedKey] = useState(null)
@@ -150,7 +168,7 @@ export default function ApiKeys() {
   const [keyToRevoke, setKeyToRevoke] = useState(null)
   const [sessionKeys, setSessionKeys] = useState(() => {
     try {
-      return JSON.parse(localStorage.getItem('oneinbox_full_keys') || '{}')
+      return JSON.parse(localStorage.getItem('oneinbox_pub_keys') || '{}')
     } catch {
       return {}
     }
@@ -159,7 +177,7 @@ export default function ApiKeys() {
   const saveSessionKey = useCallback((id, apiKey) => {
     setSessionKeys((prev) => {
       const next = { ...prev, [id]: apiKey }
-      localStorage.setItem('oneinbox_full_keys', JSON.stringify(next))
+      localStorage.setItem('oneinbox_pub_keys', JSON.stringify(next))
       return next
     })
   }, [])
@@ -169,14 +187,14 @@ export default function ApiKeys() {
     setError('')
     try {
       const [keysData, meData] = await Promise.all([
-        listApiKeys(),
+        listPublishableKeys(),
         getMe().catch(() => null),
       ])
       const all = normalizeKeyList(keysData)
       setKeys(all.filter((k) => k.is_active !== false))
       setUser(meData)
     } catch (err) {
-      setError(err.message || 'Failed to load API keys')
+      setError(err.message || 'Failed to load publishable keys')
     } finally {
       setLoading(false)
     }
@@ -199,17 +217,23 @@ export default function ApiKeys() {
     setCreating(true)
     setError('')
 
+    const allowedOrigins = newOrigins
+      .split('\n')
+      .map((o) => o.trim())
+      .filter(Boolean)
+
     try {
-      const created = await createApiKey(newKeyName.trim())
-      if (created?.id && created?.api_key) {
-        saveSessionKey(created.id, created.api_key)
+      const created = await createPublishableKey(newKeyName.trim(), allowedOrigins)
+      if (created?.id && created?.key) {
+        saveSessionKey(created.id, created.key)
       }
       setShowCreate(false)
       setNewKeyName('')
+      setNewOrigins('')
       setRevealedKey(created)
       await load()
     } catch (err) {
-      setError(err.message || 'Failed to create API key')
+      setError(err.message || 'Failed to create publishable key')
     } finally {
       setCreating(false)
     }
@@ -221,17 +245,17 @@ export default function ApiKeys() {
     setError('')
     setRevokingId(keyToRevoke.id)
     try {
-      await revokeApiKey(keyToRevoke.id)
+      await revokePublishableKey(keyToRevoke.id)
       setKeys((prev) => prev.filter((k) => k.id !== keyToRevoke.id))
       setSessionKeys((prev) => {
         const next = { ...prev }
         delete next[keyToRevoke.id]
-        localStorage.setItem('oneinbox_full_keys', JSON.stringify(next))
+        localStorage.setItem('oneinbox_pub_keys', JSON.stringify(next))
         return next
       })
       setKeyToRevoke(null)
     } catch (err) {
-      setError(err.message || 'Failed to revoke API key')
+      setError(err.message || 'Failed to revoke publishable key')
       await load()
     } finally {
       setRevokingId(null)
@@ -239,8 +263,8 @@ export default function ApiKeys() {
   }
 
   async function copyKey() {
-    if (!revealedKey?.api_key) return
-    await navigator.clipboard.writeText(revealedKey.api_key)
+    if (!revealedKey?.key) return
+    await navigator.clipboard.writeText(revealedKey.key)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }
@@ -261,10 +285,10 @@ export default function ApiKeys() {
         <nav className="breadcrumb">
           <span>Settings</span>
           <span className="breadcrumb-sep">/</span>
-          <span className="breadcrumb-current">API key</span>
+          <span className="breadcrumb-current">Publishable Keys</span>
         </nav>
 
-        <h1 className="page-title">API Keys</h1>
+        <h1 className="page-title">Publishable Keys</h1>
 
         <div className="keys-tabs">
           <NavLink to="/api-keys" className={({ isActive }) => 'keys-tab' + (isActive ? ' keys-tab-active' : '')}>
@@ -280,15 +304,12 @@ export default function ApiKeys() {
         <section className="keys-card">
           <div className="keys-card-header">
             <div className="keys-card-heading">
-              <div className="keys-card-icon keys-card-icon-private">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <rect x="3" y="11" width="18" height="11" rx="2" />
-                  <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-                </svg>
+              <div className="keys-card-icon keys-card-icon-public">
+                <IconGlobe />
               </div>
               <div>
-                <h2>API Keys</h2>
-                <p>Server-side API access</p>
+                <h2>Publishable Keys</h2>
+                <p>Safe for client-side use — browser &amp; mobile apps</p>
               </div>
             </div>
             <button
@@ -303,7 +324,12 @@ export default function ApiKeys() {
           {loading ? (
             <p className="keys-empty muted">Loading…</p>
           ) : keys.length === 0 ? (
-            <p className="keys-empty muted">No active API keys.</p>
+            <div className="keys-empty">
+              <p className="muted">No publishable keys yet.</p>
+              <p className="muted" style={{ fontSize: '0.8125rem' }}>
+                Publishable keys are safe to embed in frontend code. Use them to start web calls without exposing your secret key.
+              </p>
+            </div>
           ) : (
             <div className="keys-list">
               {keys.map((key) => (
@@ -323,8 +349,8 @@ export default function ApiKeys() {
       {showCreate && (
         <div className="overlay" onClick={() => setShowCreate(false)}>
           <div className="modal card" onClick={(e) => e.stopPropagation()}>
-            <h2>Create API key</h2>
-            <p className="muted">Give your key a name to identify it later.</p>
+            <h2>Create publishable key</h2>
+            <p className="muted">Safe for browser and mobile apps. Restrict by origin for security.</p>
             <form onSubmit={handleCreate}>
               <label>
                 Name
@@ -332,17 +358,33 @@ export default function ApiKeys() {
                   type="text"
                   value={newKeyName}
                   onChange={(e) => setNewKeyName(e.target.value)}
-                  placeholder="Production"
+                  placeholder="My Web App"
                   required
                   autoFocus
                 />
               </label>
+              <label>
+                Allowed origins <span style={{ fontWeight: 400, color: '#9ca3af' }}>(optional, one per line)</span>
+                <textarea
+                  value={newOrigins}
+                  onChange={(e) => setNewOrigins(e.target.value)}
+                  placeholder={'https://yourapp.com\nhttps://staging.yourapp.com'}
+                  rows={3}
+                  style={{
+                    display: 'block',
+                    width: '100%',
+                    marginTop: '0.375rem',
+                    padding: '0.625rem 0.75rem',
+                    border: '1px solid #d1d5db',
+                    borderRadius: '10px',
+                    fontSize: '0.9375rem',
+                    fontFamily: 'inherit',
+                    resize: 'vertical',
+                  }}
+                />
+              </label>
               <div className="modal-actions">
-                <button
-                  type="button"
-                  className="btn ghost"
-                  onClick={() => setShowCreate(false)}
-                >
+                <button type="button" className="btn ghost" onClick={() => setShowCreate(false)}>
                   Cancel
                 </button>
                 <button type="submit" className="btn add-key" disabled={creating}>
@@ -357,10 +399,10 @@ export default function ApiKeys() {
       {keyToRevoke && (
         <div className="overlay" onClick={() => setKeyToRevoke(null)}>
           <div className="modal card" onClick={(e) => e.stopPropagation()}>
-            <h2>Revoke API key?</h2>
+            <h2>Revoke publishable key?</h2>
             <p className="muted">
-              <strong>{keyToRevoke.name || 'API Key'}</strong> will stop working
-              immediately. This cannot be undone.
+              <strong>{keyToRevoke.name || 'Publishable Key'}</strong> will stop working
+              immediately. Any frontend using it will lose access.
             </p>
             <div className="modal-actions">
               <button
@@ -387,22 +429,18 @@ export default function ApiKeys() {
       {revealedKey && (
         <div className="overlay" onClick={() => setRevealedKey(null)}>
           <div className="modal card" onClick={(e) => e.stopPropagation()}>
-            <h2>API key created</h2>
+            <h2>Publishable key created</h2>
             <p className="warning">
               Copy this key now. You won&apos;t be able to see it again.
             </p>
             <div className="key-box">
-              <code>{revealedKey.api_key}</code>
+              <code>{revealedKey.key}</code>
             </div>
             <div className="modal-actions">
               <button type="button" className="btn ghost" onClick={copyKey}>
                 {copied ? 'Copied!' : 'Copy'}
               </button>
-              <button
-                type="button"
-                className="btn add-key"
-                onClick={() => setRevealedKey(null)}
-              >
+              <button type="button" className="btn add-key" onClick={() => setRevealedKey(null)}>
                 Done
               </button>
             </div>
