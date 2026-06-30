@@ -56,6 +56,47 @@ async function tryRefresh() {
   return data.access_token
 }
 
+// Resource endpoints (calls, agents, tools, etc.) are authenticated with the
+// secret API key, not the dashboard JWT — the JWT only manages the account
+// (login, api-key CRUD). This mirrors the platform's own auth split.
+const API_KEY_STORAGE = 'oneinbox_active_api_key'
+
+export function getActiveApiKey() {
+  return localStorage.getItem(API_KEY_STORAGE) || ''
+}
+
+export function setActiveApiKey(key) {
+  localStorage.setItem(API_KEY_STORAGE, key)
+}
+
+export function clearActiveApiKey() {
+  localStorage.removeItem(API_KEY_STORAGE)
+}
+
+export async function requestWithApiKey(path, options = {}) {
+  const apiKey = getActiveApiKey()
+  if (!apiKey) {
+    throw new ApiError('No API key set. Add a secret key above to load call data.', 401)
+  }
+
+  const res = await fetch(`${API_BASE}${path}`, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+      ...options.headers,
+    },
+  }).catch(() => {
+    throw new ApiError('Network error — could not reach the API.', 0)
+  })
+
+  if (!res.ok) {
+    throw new ApiError(await parseError(res), res.status)
+  }
+  if (res.status === 204) return null
+  return res.json()
+}
+
 export async function request(path, options = {}) {
   const { skipAuth, skipRefresh, ...fetchOptions } = options
   const headers = {
@@ -179,4 +220,23 @@ export function createPublishableKey(name, allowedOrigins) {
 
 export function revokePublishableKey(keyId) {
   return request(`/v1/publishable-keys/${keyId}`, { method: 'DELETE' })
+}
+
+export function listCalls(params = {}) {
+  const query = new URLSearchParams(
+    Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined && v !== ''))
+  ).toString()
+  return requestWithApiKey(`/v1/calls${query ? `?${query}` : ''}`)
+}
+
+export function getCall(callId) {
+  return requestWithApiKey(`/v1/calls/${callId}`)
+}
+
+export function normalizeCallList(data) {
+  if (Array.isArray(data)) return data
+  if (data?.items) return data.items
+  if (data?.calls) return data.calls
+  if (data?.data) return data.data
+  return []
 }

@@ -315,6 +315,15 @@ export default function ApiKeys() {
       </header>
 
       <main className="main">
+        <nav className="top-nav">
+          <NavLink to="/api-keys" className={({ isActive }) => 'top-nav-link' + (isActive ? ' top-nav-link-active' : '')}>
+            API Keys
+          </NavLink>
+          <NavLink to="/calls" className={({ isActive }) => 'top-nav-link' + (isActive ? ' top-nav-link-active' : '')}>
+            Call Logs
+          </NavLink>
+        </nav>
+
         <nav className="breadcrumb">
           <span>Settings</span>
           <span className="breadcrumb-sep">/</span>

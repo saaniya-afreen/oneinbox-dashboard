@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from 'react-router-dom'
 import { isAuthenticated } from './auth'
 import ApiKeys from './pages/ApiKeys'
 import PublishableKeys from './pages/PublishableKeys'
+import CallLogs from './pages/CallLogs'
 import Login from './pages/Login'
 import Signup from './pages/Signup'
 
@@ -51,6 +52,14 @@ export default function App() {
         element={
           <RequireAuth>
             <PublishableKeys />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/calls"
+        element={
+          <RequireAuth>
+            <CallLogs />
           </RequireAuth>
         }
       />
