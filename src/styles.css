@@ -901,8 +901,32 @@ form input:focus {
   background: #fef3c7;
 }
 
+.tool-call-toggle-error {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: #991b1b;
+}
+
+.tool-call-toggle-error:hover {
+  background: #fee2e2;
+}
+
 .tool-call-icon {
   font-size: 0.8125rem;
+}
+
+.tool-call-name {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  background: rgba(0, 0, 0, 0.06);
+  padding: 0.0625rem 0.3rem;
+  border-radius: 4px;
+  font-size: 0.7rem;
+}
+
+.tool-call-args {
+  color: inherit;
+  opacity: 0.8;
+  font-size: 0.7rem;
 }
 
 .tool-call-chevron {

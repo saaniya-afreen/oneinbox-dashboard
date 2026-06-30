@@ -143,29 +143,52 @@ function LatencyCard({ label, value, hint }) {
   )
 }
 
+// Picks a hint icon from the tool's actual name — purely cosmetic, never relabels
+// or guesses what the tool does. The name and args/result shown are always the
+// literal values from the API, unchanged.
+function toolIcon(name) {
+  const n = (name || '').toLowerCase()
+  if (n.includes('search') || n.includes('knowledge')) return '🔍'
+  if (n.includes('transfer')) return '📞'
+  if (n.includes('email')) return '✉️'
+  if (n.includes('sms') || n.includes('text')) return '💬'
+  if (n.includes('calendar') || n.includes('schedule') || n.includes('book')) return '📅'
+  if (n.includes('end_call') || n.includes('hangup')) return '🔚'
+  return '🔧'
+}
+
 function ToolCallBadge({ toolCall, toolResult }) {
   const [expanded, setExpanded] = useState(false)
 
-  let query = ''
+  let argsDisplay = ''
   try {
     const args = JSON.parse(toolCall.arguments || '{}')
-    query = args.query || Object.values(args)[0] || ''
+    const entries = Object.entries(args)
+    if (entries.length > 0) {
+      argsDisplay = entries.map(([k, v]) => `${k}: ${v}`).join(', ')
+    }
   } catch {
-    query = toolCall.arguments || ''
+    argsDisplay = toolCall.arguments || ''
   }
+
+  const isError = toolResult?.is_error
+  const hasContent = toolResult && toolResult.content
 
   return (
     <div className="tool-call-badge">
-      <button type="button" className="tool-call-toggle" onClick={() => setExpanded((v) => !v)}>
-        <span className="tool-call-icon">🔍</span>
-        <span>
-          Searched knowledge base{query ? `: "${query}"` : ''}
-        </span>
+      <button
+        type="button"
+        className={`tool-call-toggle ${isError ? 'tool-call-toggle-error' : ''}`}
+        onClick={() => setExpanded((v) => !v)}
+      >
+        <span className="tool-call-icon">{toolIcon(toolCall.name)}</span>
+        <code className="tool-call-name">{toolCall.name}</code>
+        {argsDisplay && <span className="tool-call-args">({argsDisplay})</span>}
         <span className="tool-call-chevron">{expanded ? '▲' : '▼'}</span>
       </button>
       {expanded && (
         <pre className="tool-call-result">
-          {toolResult ? toolResult.content : 'No result captured for this lookup.'}
+          {hasContent ? toolResult.content : 'No result captured.'}
         </pre>
       )}
     </div>
