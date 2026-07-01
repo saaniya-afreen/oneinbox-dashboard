@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { login } from '../api/client'
+import { clearActiveApiKey, login } from '../api/client'
 import { setToken } from '../auth'
 
 export default function Login() {
@@ -21,6 +21,7 @@ export default function Login() {
         throw new Error('No access token returned')
       }
       setToken(data.access_token)
+      clearActiveApiKey()
       navigate('/api-keys', { replace: true })
     } catch (err) {
       setError(err.message || 'Login failed')

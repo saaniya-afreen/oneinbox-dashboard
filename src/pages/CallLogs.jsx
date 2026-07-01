@@ -521,6 +521,7 @@ export default function CallLogs() {
   async function handleLogout() {
     await logout()
     clearToken()
+    clearActiveApiKey()
     navigate('/login', { replace: true })
   }
 
