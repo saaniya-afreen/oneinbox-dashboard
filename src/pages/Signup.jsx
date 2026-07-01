@@ -18,7 +18,7 @@ export default function Signup() {
     setLoading(true)
 
     try {
-      const data = await signup(email, password, organizationName.trim(), name.trim() || undefined)
+      const data = await signup(email, password, organizationName.trim() || undefined, name.trim() || undefined)
       if (!data?.access_token) {
         throw new Error('No access token returned')
       }
@@ -40,12 +40,11 @@ export default function Signup() {
 
         <form onSubmit={handleSubmit}>
           <label>
-            Organization name
+            Organization name <span className="muted">(optional)</span>
             <input
               type="text"
               value={organizationName}
               onChange={(e) => setOrganizationName(e.target.value)}
-              required
               autoComplete="organization"
               placeholder="Acme Inc."
             />

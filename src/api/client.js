@@ -159,7 +159,7 @@ export async function request(path, options = {}) {
 export function signup(email, password, organization_name, name) {
   return request('/v1/auth/signup', {
     method: 'POST',
-    body: JSON.stringify({ email, password, organization_name, ...(name ? { name } : {}) }),
+    body: JSON.stringify({ email, password, ...(organization_name ? { organization_name } : {}), ...(name ? { name } : {}) }),
     skipAuth: true,
   })
 }
