@@ -223,7 +223,7 @@ export default function PublishableKeys() {
       .filter(Boolean)
 
     try {
-      const created = await createPublishableKey(newKeyName.trim(), allowedOrigins)
+      const created = await createPublishableKey(newKeyName.trim(), allowedOrigins.length ? allowedOrigins : ['*'])
       if (created?.id && created?.key) {
         saveSessionKey(created.id, created.key)
       }
@@ -233,7 +233,12 @@ export default function PublishableKeys() {
       setRevealedKey(created)
       await load()
     } catch (err) {
-      setError(err.message || 'Failed to create publishable key')
+      const msg = err.message || ''
+      setError(
+        msg.includes('least 1 item') || msg.includes('allowed_origins')
+          ? 'Add at least one allowed origin (e.g. https://yoursite.com), or enter * to allow all origins.'
+          : msg || 'Failed to create publishable key'
+      )
     } finally {
       setCreating(false)
     }
@@ -373,11 +378,11 @@ export default function PublishableKeys() {
                 />
               </label>
               <label>
-                Allowed origins <span style={{ fontWeight: 400, color: '#9ca3af' }}>(optional, one per line)</span>
+                Allowed origins <span style={{ fontWeight: 400, color: '#9ca3af' }}>(one per line — use * to allow all)</span>
                 <textarea
                   value={newOrigins}
                   onChange={(e) => setNewOrigins(e.target.value)}
-                  placeholder={'https://yourapp.com\nhttps://staging.yourapp.com'}
+                  placeholder={'https://yourapp.com\nhttps://staging.yourapp.com\n\nLeave blank to allow all origins (*)'}
                   rows={3}
                   style={{
                     display: 'block',
