@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, NavLink } from 'react-router-dom'
 import {
   clearActiveApiKey,
@@ -11,6 +11,8 @@ import {
   setActiveApiKey,
 } from '../api/client'
 import { clearToken } from '../auth'
+
+const PAGE_SIZE = 20
 
 const TERMINAL_STATUSES = new Set([
   'completed',
@@ -52,11 +54,11 @@ function formatDuration(seconds) {
   return m > 0 ? `${m}m ${s}s` : `${s}s`
 }
 
-// Groups latency.events by turn and sums eou_delay + llm_ttft + tts_ttfb + kb per turn.
-// kb (knowledge base retrieval) must be included — when a turn triggers a real KB
-// lookup, the events array shows llm_ttft -> kb -> llm_ttft (decide to search, then
-// answer using the result), and dropping the kb leg silently undercounts that turn.
 const TURN_LATENCY_TYPES = ['eou_delay', 'llm_ttft', 'tts_ttfb', 'kb']
+
+function isToolEvent(type) {
+  return type && (type.startsWith('tool:') || type === 'tool')
+}
 
 function computeLatencySummary(call) {
   const latency = call?.latency
@@ -64,15 +66,13 @@ function computeLatencySummary(call) {
 
   const turns = {}
   for (const e of latency.events || []) {
-    if (!TURN_LATENCY_TYPES.includes(e.type)) continue
+    if (!TURN_LATENCY_TYPES.includes(e.type) && !isToolEvent(e.type)) continue
     turns[e.turn] = (turns[e.turn] || 0) + e.ms
   }
   const turnTotals = Object.values(turns)
 
   const connectMs = latency.connect?.setup_ms ?? null
 
-  // KB isn't given its own aggregate object the way stt/llm_ttft/tts_ttfb/eou_delay
-  // are, so it's computed here from the raw events.
   const kbTimes = (latency.events || []).filter((e) => e.type === 'kb').map((e) => e.ms)
   const kbStats = kbTimes.length
     ? {
@@ -83,15 +83,48 @@ function computeLatencySummary(call) {
       }
     : null
 
+  // Aggregate tool latencies by tool name
+  const toolMap = {}
+  for (const e of latency.events || []) {
+    if (!isToolEvent(e.type)) continue
+    const name = e.type.startsWith('tool:') ? e.type.slice(5) : 'tool'
+    if (!toolMap[name]) toolMap[name] = []
+    toolMap[name].push(e.ms)
+  }
+  const toolStats = Object.entries(toolMap).map(([name, times]) => ({
+    name,
+    count: times.length,
+    avg: times.reduce((a, b) => a + b, 0) / times.length,
+    max: Math.max(...times),
+    p50: [...times].sort((a, b) => a - b)[Math.floor((times.length - 1) / 2)],
+  }))
+
   if (turnTotals.length === 0) {
-    return { connectMs, avg: null, peak: null, min: null, sampleCount: 0, kbStats }
+    return { connectMs, avg: null, peak: null, min: null, sampleCount: 0, kbStats, toolStats }
   }
 
   const avg = turnTotals.reduce((a, b) => a + b, 0) / turnTotals.length
   const peak = Math.max(...turnTotals)
   const min = Math.min(...turnTotals)
 
-  return { connectMs, avg, peak, min, sampleCount: turnTotals.length, kbStats }
+  return { connectMs, avg, peak, min, sampleCount: turnTotals.length, kbStats, toolStats }
+}
+
+function getDateRange(dateFilter) {
+  const now = new Date()
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  if (dateFilter === 'today') return { from: todayStart, to: null }
+  if (dateFilter === 'yesterday') {
+    const from = new Date(todayStart)
+    from.setDate(from.getDate() - 1)
+    return { from, to: todayStart }
+  }
+  if (dateFilter === 'week') {
+    const from = new Date(todayStart)
+    from.setDate(from.getDate() - 6)
+    return { from, to: null }
+  }
+  return { from: null, to: null }
 }
 
 function StatusBadge({ status }) {
@@ -100,6 +133,17 @@ function StatusBadge({ status }) {
     <span className={`status-badge ${live ? 'status-live' : 'status-done'}`}>
       {live && <span className="live-dot" />}
       {status || 'unknown'}
+    </span>
+  )
+}
+
+function DirectionBadge({ type, direction }) {
+  const val = type || direction
+  if (!val) return null
+  const isIn = val === 'inbound'
+  return (
+    <span className="direction-badge" style={{ color: isIn ? '#2563eb' : '#7c3aed' }}>
+      {isIn ? '↙ inbound' : '↗ outbound'}
     </span>
   )
 }
@@ -127,6 +171,9 @@ function CallRow({ call, onClick, active }) {
           {formatDateTime(call.created_at)}
           {call.duration_seconds != null && <span> &middot; {formatDuration(call.duration_seconds)}</span>}
           {call.outcome && <span> &middot; {call.outcome}</span>}
+          {(call.type || call.direction) && (
+            <span> &middot; <DirectionBadge type={call.type} direction={call.direction} /></span>
+          )}
         </div>
       </div>
     </button>
@@ -143,9 +190,6 @@ function LatencyCard({ label, value, hint }) {
   )
 }
 
-// Picks a hint icon from the tool's actual name — purely cosmetic, never relabels
-// or guesses what the tool does. The name and args/result shown are always the
-// literal values from the API, unchanged.
 function toolIcon(name) {
   const n = (name || '').toLowerCase()
   if (n.includes('search') || n.includes('knowledge')) return '🔍'
@@ -195,10 +239,6 @@ function ToolCallBadge({ toolCall, toolResult }) {
   )
 }
 
-// Renders the structured messages array instead of the raw transcript string —
-// the raw string interleaves full KB search results (huge PDF chunks, mixed-language
-// text) directly between conversation turns, which makes the actual back-and-forth
-// unreadable. Tool calls are collapsed into a small expandable badge instead.
 function TranscriptView({ messages }) {
   if (!messages || messages.length === 0) return null
 
@@ -210,7 +250,6 @@ function TranscriptView({ messages }) {
       const result = messages.find((r) => r.role === 'tool_result' && r.tool_call_id === m.tool_call_id)
       items.push({ type: 'tool', toolCall: m, toolResult: result, key: i })
     }
-    // tool_result entries are matched and rendered alongside their tool_call above, skipped here
   })
 
   return (
@@ -240,6 +279,10 @@ function CallDetail({ call }) {
   const live = isLive(call.status)
   const summary = computeLatencySummary(call)
   const latency = call.latency
+  const aiSummary = call.ai_summary || call.analysis?.summary
+  const sentiment = call.analysis?.sentiment
+  const extracted = call.analysis?.extracted_data?.post_call
+  const leadInfo = call.analysis?.extracted_data?.capture_lead_info
 
   return (
     <div className="call-detail">
@@ -251,13 +294,16 @@ function CallDetail({ call }) {
             {call.duration_seconds != null && <span> &middot; {formatDuration(call.duration_seconds)}</span>}
           </p>
         </div>
-        <StatusBadge status={call.status} />
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
+          <StatusBadge status={call.status} />
+          <DirectionBadge type={call.type} direction={call.direction} />
+        </div>
       </div>
 
       {live && (
         <div className="live-banner">
           <span className="live-dot" />
-          Live — transcript updates automatically every 2 seconds
+          In progress — transcript will appear automatically when the call ends
         </div>
       )}
 
@@ -273,6 +319,24 @@ function CallDetail({ call }) {
             <div className="meta-item">
               <span className="meta-label">Outcome</span>
               <span className="meta-value">{call.outcome}</span>
+            </div>
+          )}
+          {call.from_number && call.to_number && (
+            <div className="meta-item">
+              <span className="meta-label">From</span>
+              <span className="meta-value">{call.from_number}</span>
+            </div>
+          )}
+          {call.started_at && (
+            <div className="meta-item">
+              <span className="meta-label">Started</span>
+              <span className="meta-value">{formatDateTime(call.started_at)}</span>
+            </div>
+          )}
+          {call.ended_at && (
+            <div className="meta-item">
+              <span className="meta-label">Ended</span>
+              <span className="meta-value">{formatDateTime(call.ended_at)}</span>
             </div>
           )}
           {call.metadata?.concurrency_at_dispatch != null && (
@@ -305,6 +369,18 @@ function CallDetail({ call }) {
               </span>
             </div>
           )}
+          {call.twilio_call_sid && (
+            <div className="meta-item">
+              <span className="meta-label">Twilio SID</span>
+              <span className="meta-value" style={{ fontFamily: 'monospace', fontSize: '11px' }}>{call.twilio_call_sid}</span>
+            </div>
+          )}
+          {sentiment && (
+            <div className="meta-item">
+              <span className="meta-label">Sentiment</span>
+              <span className={`sentiment-badge sentiment-${sentiment}`}>{sentiment}</span>
+            </div>
+          )}
           {call.recording_url && (
             <div className="meta-item">
               <span className="meta-label">Recording</span>
@@ -316,6 +392,62 @@ function CallDetail({ call }) {
         </div>
       </section>
 
+      {aiSummary && (
+        <section className="ai-summary-section">
+          <h3>AI Summary</h3>
+          <p className="ai-summary-text">{aiSummary}</p>
+        </section>
+      )}
+
+      {(extracted || leadInfo) && (
+        <section className="analysis-section">
+          <h3>Analysis</h3>
+          <div className="analysis-grid">
+            {extracted?.entities && Object.keys(extracted.entities).length > 0 && (
+              <div className="analysis-card">
+                <div className="analysis-card-title">Entities captured</div>
+                {Object.entries(extracted.entities).map(([k, v]) => v && (
+                  <div key={k} className="analysis-kv">
+                    <span className="analysis-key">{k.replace(/_/g, ' ')}</span>
+                    <span className="analysis-val">{String(v)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {leadInfo && (
+              <div className="analysis-card">
+                <div className="analysis-card-title">Lead info</div>
+                {Object.entries(leadInfo).map(([k, v]) => v != null && (
+                  <div key={k} className="analysis-kv">
+                    <span className="analysis-key">{k.replace(/_/g, ' ')}</span>
+                    <span className="analysis-val">{String(v)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {extracted?.key_points?.length > 0 && (
+              <div className="analysis-card analysis-card-wide">
+                <div className="analysis-card-title">Key points</div>
+                <ul className="analysis-list">
+                  {extracted.key_points.map((p, i) => <li key={i}>{p}</li>)}
+                </ul>
+              </div>
+            )}
+            {extracted?.action_items?.length > 0 && (
+              <div className="analysis-card analysis-card-wide">
+                <div className="analysis-card-title">
+                  Action items
+                  {extracted.follow_up_needed && <span className="follow-up-badge">follow-up needed</span>}
+                </div>
+                <ul className="analysis-list">
+                  {extracted.action_items.map((a, i) => <li key={i}>{a}</li>)}
+                </ul>
+              </div>
+            )}
+          </div>
+        </section>
+      )}
+
       <section className="latency-section">
         <h3>Latency breakdown</h3>
         {summary && summary.sampleCount > 0 ? (
@@ -325,6 +457,9 @@ function CallDetail({ call }) {
               <LatencyCard label="Average (mean)" value={formatMs(summary.avg)} hint={`${summary.sampleCount} turns`} />
               <LatencyCard label="Peak (max)" value={formatMs(summary.peak)} hint="Slowest turn" />
               <LatencyCard label="Best (min)" value={formatMs(summary.min)} hint="Fastest turn" />
+              {latency?.perceived && (
+                <LatencyCard label="Perceived avg" value={formatMs(latency.perceived.avg_ms)} hint={`${latency.perceived.turns} turns · p50 ${formatMs(latency.perceived.p50_ms)}`} />
+              )}
             </div>
             {latency?.connect && (
               <p className="connect-breakdown muted">
@@ -364,6 +499,14 @@ function CallDetail({ call }) {
                       <td>{formatMs(summary.kbStats.p50)}</td>
                     </tr>
                   )}
+                  {summary.toolStats?.map((t) => (
+                    <tr key={t.name} className="latency-row-tool">
+                      <td>🔧 {t.name}{t.count > 1 ? ` (×${t.count})` : ''}</td>
+                      <td>{formatMs(t.avg)}</td>
+                      <td>{formatMs(t.max)}</td>
+                      <td>{formatMs(t.p50)}</td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             )}
@@ -374,7 +517,7 @@ function CallDetail({ call }) {
       </section>
 
       <section className="transcript-section">
-        <h3>Transcript {live && <span className="muted">(live)</span>}</h3>
+        <h3>Transcript {live && <span className="muted">(updating when call ends)</span>}</h3>
         {call.messages && call.messages.length > 0 ? (
           <div className="transcript-box">
             <TranscriptView messages={call.messages} />
@@ -382,9 +525,85 @@ function CallDetail({ call }) {
         ) : call.transcript ? (
           <pre className="transcript-box">{call.transcript}</pre>
         ) : (
-          <p className="muted">{live ? 'Waiting for the conversation to start…' : 'No transcript available.'}</p>
+          <p className="muted">{live ? 'Transcript will appear here once the call ends.' : 'No transcript available.'}</p>
         )}
       </section>
+    </div>
+  )
+}
+
+function FilterBar({ filters, onChange, outcomes, endReasons }) {
+  const hasActive = filters.date !== 'all' || filters.status || filters.outcome || filters.endReason
+
+  return (
+    <div className="filter-bar">
+      <div className="filter-group">
+        <label className="filter-label">Date</label>
+        <select className="filter-select" value={filters.date} onChange={(e) => onChange({ ...filters, date: e.target.value })}>
+          <option value="today">Today</option>
+          <option value="yesterday">Yesterday</option>
+          <option value="week">Last 7 days</option>
+          <option value="all">All time</option>
+        </select>
+      </div>
+
+      <div className="filter-group">
+        <label className="filter-label">Status</label>
+        <select className="filter-select" value={filters.status} onChange={(e) => onChange({ ...filters, status: e.target.value })}>
+          <option value="">All</option>
+          <option value="completed">Completed</option>
+          <option value="in-progress">In progress</option>
+          <option value="queued">Queued</option>
+          <option value="failed">Failed</option>
+        </select>
+      </div>
+
+      <div className="filter-group">
+        <label className="filter-label">End reason</label>
+        <select className="filter-select" value={filters.endReason} onChange={(e) => onChange({ ...filters, endReason: e.target.value })}>
+          <option value="">All</option>
+          {endReasons.map((r) => (
+            <option key={r} value={r}>{r.replace(/_/g, ' ').toLowerCase()}</option>
+          ))}
+        </select>
+      </div>
+
+      <div className="filter-group">
+        <label className="filter-label">Outcome</label>
+        <select className="filter-select" value={filters.outcome} onChange={(e) => onChange({ ...filters, outcome: e.target.value })}>
+          <option value="">All</option>
+          {outcomes.map((o) => (
+            <option key={o} value={o}>{o}</option>
+          ))}
+        </select>
+      </div>
+
+      {hasActive && (
+        <button
+          type="button"
+          className="btn ghost btn-sm"
+          onClick={() => onChange({ date: 'all', status: '', outcome: '', endReason: '' })}
+        >
+          Clear filters
+        </button>
+      )}
+    </div>
+  )
+}
+
+function Pagination({ page, pageCount, total, onPrev, onNext }) {
+  if (pageCount <= 1) return null
+  return (
+    <div className="pagination">
+      <button type="button" className="btn ghost btn-sm" onClick={onPrev} disabled={page === 0}>
+        ← Prev
+      </button>
+      <span className="pagination-info">
+        Page {page + 1} of {pageCount} &middot; {total} calls
+      </span>
+      <button type="button" className="btn ghost btn-sm" onClick={onNext} disabled={page >= pageCount - 1}>
+        Next →
+      </button>
     </div>
   )
 }
@@ -449,13 +668,15 @@ function ApiKeyBanner({ apiKey, onSave, onClear }) {
 
 export default function CallLogs() {
   const navigate = useNavigate()
-  const [calls, setCalls] = useState([])
+  const [allCalls, setAllCalls] = useState([])
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [selectedId, setSelectedId] = useState(null)
   const [selectedCall, setSelectedCall] = useState(null)
   const [apiKey, setApiKey] = useState(() => getActiveApiKey())
+  const [filters, setFilters] = useState({ date: 'today', status: '', outcome: '', endReason: '' })
+  const [page, setPage] = useState(0)
 
   const pollRef = useRef(null)
   const listPollRef = useRef(null)
@@ -467,10 +688,10 @@ export default function CallLogs() {
     }
     try {
       const [callsData, meData] = await Promise.all([
-        listCalls({ limit: 50 }),
+        listCalls({ limit: 100 }),
         getMe().catch(() => null),
       ])
-      setCalls(normalizeCallList(callsData))
+      setAllCalls(normalizeCallList(callsData))
       if (meData) setUser(meData)
       setError('')
     } catch (err) {
@@ -480,14 +701,12 @@ export default function CallLogs() {
     }
   }, [])
 
-  // Initial load + background refresh of the list every 5s (so new/live calls show up)
   useEffect(() => {
     loadList()
     listPollRef.current = setInterval(loadList, 5000)
     return () => clearInterval(listPollRef.current)
   }, [loadList, apiKey])
 
-  // Selected call: load detail, and poll every 2s while it's still live
   useEffect(() => {
     if (!selectedId) {
       setSelectedCall(null)
@@ -518,6 +737,52 @@ export default function CallLogs() {
     }
   }, [selectedId])
 
+  // Derive unique outcome/end_reason values for filter dropdowns
+  const { outcomes, endReasons } = useMemo(() => {
+    const os = new Set()
+    const er = new Set()
+    for (const c of allCalls) {
+      if (c.outcome) os.add(c.outcome)
+      if (c.end_reason) er.add(c.end_reason)
+    }
+    return { outcomes: [...os].sort(), endReasons: [...er].sort() }
+  }, [allCalls])
+
+  // Apply filters
+  const filteredCalls = useMemo(() => {
+    let result = allCalls
+
+    if (filters.date !== 'all') {
+      const { from, to } = getDateRange(filters.date)
+      result = result.filter((c) => {
+        const created = new Date(c.created_at)
+        if (from && created < from) return false
+        if (to && created >= to) return false
+        return true
+      })
+    }
+
+    if (filters.status) {
+      result = result.filter((c) => (c.status || '').toLowerCase() === filters.status)
+    }
+    if (filters.outcome) {
+      result = result.filter((c) => c.outcome === filters.outcome)
+    }
+    if (filters.endReason) {
+      result = result.filter((c) => c.end_reason === filters.endReason)
+    }
+
+    return result
+  }, [allCalls, filters])
+
+  const pageCount = Math.max(1, Math.ceil(filteredCalls.length / PAGE_SIZE))
+  const pagedCalls = filteredCalls.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
+
+  function handleFiltersChange(next) {
+    setFilters(next)
+    setPage(0)
+  }
+
   async function handleLogout() {
     await logout()
     clearToken()
@@ -535,7 +800,7 @@ export default function CallLogs() {
   function handleClearApiKey() {
     clearActiveApiKey()
     setApiKey('')
-    setCalls([])
+    setAllCalls([])
   }
 
   return (
@@ -566,25 +831,49 @@ export default function CallLogs() {
 
         {error && <p className="error banner">{error}</p>}
 
+        <FilterBar
+          filters={filters}
+          onChange={handleFiltersChange}
+          outcomes={outcomes}
+          endReasons={endReasons}
+        />
+
+        <div className="filter-summary">
+          {filteredCalls.length} call{filteredCalls.length !== 1 ? 's' : ''}
+          {filters.date !== 'all' && ` · ${filters.date === 'today' ? 'today' : filters.date === 'yesterday' ? 'yesterday' : 'last 7 days'}`}
+          {filters.status && ` · ${filters.status}`}
+          {filters.outcome && ` · ${filters.outcome}`}
+          {filters.endReason && ` · ${filters.endReason.replace(/_/g, ' ').toLowerCase()}`}
+        </div>
+
         <div className="call-logs-layout">
           <section className="call-list-card">
             {!apiKey ? (
               <p className="keys-empty muted">Add an API key above to load calls.</p>
             ) : loading ? (
               <p className="keys-empty muted">Loading…</p>
-            ) : calls.length === 0 ? (
-              <p className="keys-empty muted">No calls yet.</p>
+            ) : pagedCalls.length === 0 ? (
+              <p className="keys-empty muted">No calls match the current filters.</p>
             ) : (
-              <div className="call-list">
-                {calls.map((call) => (
-                  <CallRow
-                    key={call.id}
-                    call={call}
-                    active={call.id === selectedId}
-                    onClick={() => setSelectedId(call.id)}
-                  />
-                ))}
-              </div>
+              <>
+                <div className="call-list">
+                  {pagedCalls.map((call) => (
+                    <CallRow
+                      key={call.id}
+                      call={call}
+                      active={call.id === selectedId}
+                      onClick={() => setSelectedId(call.id)}
+                    />
+                  ))}
+                </div>
+                <Pagination
+                  page={page}
+                  pageCount={pageCount}
+                  total={filteredCalls.length}
+                  onPrev={() => setPage((p) => Math.max(0, p - 1))}
+                  onNext={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
+                />
+              </>
             )}
           </section>
 
