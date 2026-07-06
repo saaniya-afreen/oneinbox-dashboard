@@ -2,7 +2,7 @@
   "rewrites": [
     {
       "source": "/v1/:path*",
-      "destination": "https://api.oneinbox.ai/v1/:path*"
+      "destination": "https://api-tokyo.oneinbox.ai/v1/:path*"
     },
     {
       "source": "/(.*)",
