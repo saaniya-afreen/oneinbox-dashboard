@@ -207,7 +207,7 @@ export default function Activity() {
   return (
     <div className="page">
       <header className="header">
-        <img src="/oneinbox-logo-dark.svg" alt="OneInbox" className="logo" />
+        <img src="/logo.svg" alt="OneInbox" className="logo" />
         <div className="header-actions">
           {user?.email && <span className="muted">{user.email}</span>}
           <button type="button" className="btn ghost" onClick={handleLogout}>Log out</button>
