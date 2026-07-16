@@ -240,3 +240,25 @@ export function normalizeCallList(data) {
   if (data?.data) return data.data
   return []
 }
+
+export function getActivitySummary(params = {}) {
+  const query = new URLSearchParams(
+    Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined && v !== ''))
+  ).toString()
+  return requestWithApiKey(`/v1/activity/summary${query ? `?${query}` : ''}`)
+}
+
+export function listAuditEvents(params = {}) {
+  const query = new URLSearchParams(
+    Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined && v !== ''))
+  ).toString()
+  return requestWithApiKey(`/v1/audit-events${query ? `?${query}` : ''}`)
+}
+
+export function normalizeAuditList(data) {
+  if (Array.isArray(data)) return data
+  if (data?.items) return data.items
+  if (data?.events) return data.events
+  if (data?.data) return data.data
+  return []
+}

@@ -322,6 +322,9 @@ export default function ApiKeys() {
           <NavLink to="/calls" className={({ isActive }) => 'top-nav-link' + (isActive ? ' top-nav-link-active' : '')}>
             Call Logs
           </NavLink>
+          <NavLink to="/activity" className={({ isActive }) => 'top-nav-link' + (isActive ? ' top-nav-link-active' : '')}>
+            Activity
+          </NavLink>
         </nav>
 
         <nav className="breadcrumb">

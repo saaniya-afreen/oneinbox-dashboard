@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { isAuthenticated } from './auth'
+import Activity from './pages/Activity'
 import ApiKeys from './pages/ApiKeys'
 import PublishableKeys from './pages/PublishableKeys'
 import CallLogs from './pages/CallLogs'
@@ -60,6 +61,14 @@ export default function App() {
         element={
           <RequireAuth>
             <CallLogs />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/activity"
+        element={
+          <RequireAuth>
+            <Activity />
           </RequireAuth>
         }
       />
