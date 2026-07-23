@@ -297,6 +297,9 @@ export default function PublishableKeys() {
           <NavLink to="/activity" className={({ isActive }) => 'top-nav-link' + (isActive ? ' top-nav-link-active' : '')}>
             Activity
           </NavLink>
+          <NavLink to="/billing" className={({ isActive }) => 'top-nav-link' + (isActive ? ' top-nav-link-active' : '')}>
+            Billing
+          </NavLink>
         </nav>
 
         <nav className="breadcrumb">

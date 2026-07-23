@@ -225,6 +225,9 @@ export default function Activity() {
           <NavLink to="/activity" className={({ isActive }) => 'top-nav-link' + (isActive ? ' top-nav-link-active' : '')}>
             Activity
           </NavLink>
+          <NavLink to="/billing" className={({ isActive }) => 'top-nav-link' + (isActive ? ' top-nav-link-active' : '')}>
+            Billing
+          </NavLink>
         </nav>
 
         <h1 className="page-title">Activity</h1>

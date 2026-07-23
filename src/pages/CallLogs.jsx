@@ -826,6 +826,9 @@ export default function CallLogs() {
           <NavLink to="/activity" className={({ isActive }) => 'top-nav-link' + (isActive ? ' top-nav-link-active' : '')}>
             Activity
           </NavLink>
+          <NavLink to="/billing" className={({ isActive }) => 'top-nav-link' + (isActive ? ' top-nav-link-active' : '')}>
+            Billing
+          </NavLink>
         </nav>
 
         <h1 className="page-title">Call Logs</h1>
