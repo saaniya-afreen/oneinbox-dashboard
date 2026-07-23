@@ -8,6 +8,7 @@ import {
   getLedger,
   getWallet,
   normalizeLedger,
+  setActiveApiKey,
   setAutoRecharge,
 } from '../api/client'
 import { clearToken } from '../auth'
@@ -181,7 +182,31 @@ export default function Billing() {
 
         {!hasKey && (
           <div className="apikey-banner">
-            <span>Set an API key on the <Link to="/api-keys">API Keys</Link> page to load billing data.</span>
+            <span style={{ display: 'block', marginBottom: 12 }}>
+              Paste your secret API key (<code style={{ fontSize: 12 }}>oi_sk_...</code>) to load billing data.
+              You can find it on the <Link to="/api-keys">API Keys</Link> page — copy it when you create or rotate a key.
+            </span>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault()
+                const val = e.target.apikey.value.trim()
+                if (val.startsWith('oi_sk_')) {
+                  setActiveApiKey(val)
+                  window.location.reload()
+                }
+              }}
+              style={{ display: 'flex', gap: 8, alignItems: 'center' }}
+            >
+              <input
+                name="apikey"
+                type="password"
+                placeholder="oi_sk_..."
+                style={{ flex: 1, padding: '7px 12px', fontSize: 13, border: '1px solid #d1d5db', borderRadius: 6 }}
+              />
+              <button type="submit" style={{ padding: '7px 16px', fontSize: 13, background: '#111827', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer' }}>
+                Use this key
+              </button>
+            </form>
           </div>
         )}
 
