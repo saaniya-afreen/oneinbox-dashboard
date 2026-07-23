@@ -2,12 +2,14 @@ import { useCallback, useEffect, useState } from 'react'
 import { useNavigate, NavLink } from 'react-router-dom'
 import {
   createApiKey,
+  getActiveApiKey,
   getMe,
   listApiKeys,
   logout,
   normalizeKeyList,
   revokeApiKey,
   rotateApiKey,
+  setActiveApiKey,
 } from '../api/client'
 import { clearToken } from '../auth'
 
@@ -213,8 +215,17 @@ export default function ApiKeys() {
         getMe().catch(() => null),
       ])
       const all = normalizeKeyList(keysData)
-      setKeys(all.filter((k) => k.is_active !== false))
+      const active = all.filter((k) => k.is_active !== false)
+      setKeys(active)
       setUser(meData)
+      // Auto-set active key for Billing page if not already set
+      if (!getActiveApiKey()) {
+        const stored = (() => {
+          try { return JSON.parse(localStorage.getItem('oneinbox_full_keys') || '{}') } catch { return {} }
+        })()
+        const match = active.find((k) => stored[k.id])
+        if (match) setActiveApiKey(stored[match.id])
+      }
     } catch (err) {
       setError(err.message || 'Failed to load API keys')
     } finally {
@@ -243,6 +254,7 @@ export default function ApiKeys() {
       const created = await createApiKey(newKeyName.trim())
       if (created?.id && created?.api_key) {
         saveSessionKey(created.id, created.api_key)
+        setActiveApiKey(created.api_key)
       }
       setShowCreate(false)
       setNewKeyName('')
@@ -284,6 +296,7 @@ export default function ApiKeys() {
       const newKeyValue = rotated?.api_key || rotated?.key
       if (keyToRotate.id && newKeyValue) {
         saveSessionKey(keyToRotate.id, newKeyValue)
+        setActiveApiKey(newKeyValue)
       }
       setKeyToRotate(null)
       setRevealedKey({ ...keyToRotate, api_key: newKeyValue })
