@@ -339,12 +339,19 @@ export default function Billing() {
                 <p className="muted">Loading…</p>
               ) : (
                 <form onSubmit={handleSaveAutoRecharge}>
-                  <div style={{ marginBottom: 14, cursor: 'pointer' }} onClick={() => setArForm((f) => ({ ...f, enabled: !f.enabled }))}>
+                  <div style={{ marginBottom: 14, cursor: 'pointer' }}
+                    onClick={() => setArForm((f) => {
+                      const enabled = !f.enabled
+                      return enabled
+                        ? { ...f, enabled }
+                        : { enabled: false, threshold: 0, amount: 0, monthly_cap: 0 }
+                    })}
+                  >
                     <input
                       type="checkbox"
                       checked={arForm.enabled}
                       readOnly
-                      style={{ cursor: 'pointer', marginRight: 8, verticalAlign: 'middle' }}
+                      style={{ display: 'inline', width: 'auto', cursor: 'pointer', marginRight: 8, verticalAlign: 'middle' }}
                     />
                     <span style={{ fontSize: 14, fontWeight: 500, verticalAlign: 'middle' }}>Enable auto-recharge</span>
                     <div style={{ fontSize: 12, color: '#6b7280', marginTop: 4, paddingLeft: 22 }}>Automatically top up when balance drops below threshold</div>
