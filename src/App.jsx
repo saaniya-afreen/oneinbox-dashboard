@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from 'react-router-dom'
 import { isAuthenticated } from './auth'
 import Activity from './pages/Activity'
 import ApiKeys from './pages/ApiKeys'
+import Billing from './pages/Billing'
 import PublishableKeys from './pages/PublishableKeys'
 import CallLogs from './pages/CallLogs'
 import Login from './pages/Login'
@@ -69,6 +70,14 @@ export default function App() {
         element={
           <RequireAuth>
             <Activity />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/billing"
+        element={
+          <RequireAuth>
+            <Billing />
           </RequireAuth>
         }
       />

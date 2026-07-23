@@ -262,3 +262,45 @@ export function normalizeAuditList(data) {
   if (data?.data) return data.data
   return []
 }
+
+// Billing (uses API key auth)
+export function getWallet() {
+  return requestWithApiKey('/v1/billing/wallet')
+}
+
+export function getLedger(params = {}) {
+  const q = new URLSearchParams(
+    Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined && v !== ''))
+  ).toString()
+  return requestWithApiKey(`/v1/billing/ledger${q ? `?${q}` : ''}`)
+}
+
+export function getEffectiveRates() {
+  return requestWithApiKey('/v1/billing/rates')
+}
+
+export function createCheckout(credits, successUrl, cancelUrl) {
+  return requestWithApiKey('/v1/billing/checkout', {
+    method: 'POST',
+    body: JSON.stringify({ credits: Number(credits), success_url: successUrl, cancel_url: cancelUrl }),
+  })
+}
+
+export function getAutoRecharge() {
+  return requestWithApiKey('/v1/billing/auto-recharge')
+}
+
+export function setAutoRecharge(config) {
+  return requestWithApiKey('/v1/billing/auto-recharge', {
+    method: 'PUT',
+    body: JSON.stringify(config),
+  })
+}
+
+export function normalizeLedger(data) {
+  if (Array.isArray(data)) return data
+  if (data?.items) return data.items
+  if (data?.entries) return data.entries
+  if (data?.data) return data.data
+  return []
+}
