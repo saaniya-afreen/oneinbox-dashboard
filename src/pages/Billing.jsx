@@ -265,12 +265,44 @@ export default function Billing() {
                   Your Rates
                 </div>
                 <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
-                  {Object.entries(rates).filter(([, v]) => typeof v === 'number').map(([k, v]) => (
-                    <div key={k}>
-                      <span style={{ fontSize: 13, color: '#6b7280' }}>{k.replace(/_/g, ' ')}: </span>
-                      <span style={{ fontWeight: 600 }}>${Number(v).toFixed(4)}/min</span>
-                    </div>
-                  ))}
+                  {(() => {
+                    // normalize: array of {component, rate_per_minute} OR flat object {key: number}
+                    const items = Array.isArray(rates)
+                      ? rates
+                      : Array.isArray(rates?.items)
+                      ? rates.items
+                      : Array.isArray(rates?.rates)
+                      ? rates.rates
+                      : null
+
+                    if (items) {
+                      return items.map((r, i) => {
+                        const label = (r.component || r.name || r.type || 'rate').replace(/_/g, ' ')
+                        const val = r.rate_per_minute ?? r.rate ?? r.amount ?? r.value
+                        return (
+                          <div key={i}>
+                            <span style={{ fontSize: 13, color: '#6b7280' }}>{label}: </span>
+                            <span style={{ fontWeight: 600 }}>
+                              {val != null ? `$${Number(val).toFixed(4)}/min` : '—'}
+                            </span>
+                          </div>
+                        )
+                      })
+                    }
+
+                    // fallback: flat object {key: number}
+                    const flat = Object.entries(rates).filter(([, v]) => typeof v === 'number')
+                    if (flat.length > 0) {
+                      return flat.map(([k, v]) => (
+                        <div key={k}>
+                          <span style={{ fontSize: 13, color: '#6b7280' }}>{k.replace(/_/g, ' ')}: </span>
+                          <span style={{ fontWeight: 600 }}>${Number(v).toFixed(4)}/min</span>
+                        </div>
+                      ))
+                    }
+
+                    return <span style={{ fontSize: 13, color: '#6b7280' }}>No rates configured yet.</span>
+                  })()}
                 </div>
               </div>
             )}
