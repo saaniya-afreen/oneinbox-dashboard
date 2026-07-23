@@ -345,8 +345,10 @@ export default function Billing() {
                       checked={arForm.enabled}
                       onChange={(e) => setArForm((f) => ({ ...f, enabled: e.target.checked }))}
                     />
-                    <span style={{ fontSize: 14, fontWeight: 500 }}>Enable auto-recharge</span>
-                    <span style={{ fontSize: 12, color: '#6b7280' }}>Automatically top up when balance drops below threshold</span>
+                    <div>
+                      <div style={{ fontSize: 14, fontWeight: 500 }}>Enable auto-recharge</div>
+                      <div style={{ fontSize: 12, color: '#6b7280' }}>Automatically top up when balance drops below threshold</div>
+                    </div>
                   </label>
                   <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 12 }}>
                     <div>
