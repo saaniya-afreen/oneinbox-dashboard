@@ -210,19 +210,26 @@ export default function Activity() {
     setSummaryLoading(true)
     setSummaryError('')
     const dateParams = getDateParams(dateFilter, customFrom, customTo)
-    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone
-    Promise.all([
+    const rawTz = Intl.DateTimeFormat().resolvedOptions().timeZone
+    const TZ_ALIASES = { 'Asia/Calcutta': 'Asia/Kolkata', 'Asia/Saigon': 'Asia/Ho_Chi_Minh', 'America/Godthab': 'America/Nuuk' }
+    const tz = TZ_ALIASES[rawTz] || rawTz
+    Promise.allSettled([
       getActivitySummary(dateParams),
       getActivityTimeseries({ bucket: 'day', tz, ...dateParams }),
     ])
-      .then(([raw, tsData]) => {
+      .then(([summaryResult, tsResult]) => {
+        if (summaryResult.status === 'rejected') {
+          const e = summaryResult.reason
+          if (e.status === 401) { handleInvalidKey(); return }
+          setSummaryError(e.message)
+          return
+        }
+        const raw = summaryResult.value
         setSummary(raw)
         if (Array.isArray(raw?.known_actions)) setKnownActions(raw.known_actions)
-        setTimeseries(Array.isArray(tsData?.points) ? tsData.points : [])
-      })
-      .catch((e) => {
-        if (e.status === 401) { handleInvalidKey(); return }
-        setSummaryError(e.message)
+        if (tsResult.status === 'fulfilled') {
+          setTimeseries(Array.isArray(tsResult.value?.points) ? tsResult.value.points : [])
+        }
       })
       .finally(() => setSummaryLoading(false))
   }, [apiKey, dateFilter, customFrom, customTo, handleInvalidKey])
