@@ -263,6 +263,13 @@ export function normalizeAuditList(data) {
   return []
 }
 
+export function getActivityTimeseries(params = {}) {
+  const query = new URLSearchParams(
+    Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined && v !== ''))
+  ).toString()
+  return requestWithApiKey(`/v1/activity/timeseries${query ? `?${query}` : ''}`)
+}
+
 // Billing (uses API key auth)
 export function getWallet() {
   return requestWithApiKey('/v1/billing/wallet')

@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, NavLink } from 'react-router-dom'
 import {
   clearActiveApiKey,
   getActiveApiKey,
   getActivitySummary,
+  getActivityTimeseries,
   getMe,
   listAuditEvents,
   logout,
@@ -16,20 +17,30 @@ const DATE_OPTIONS = [
   { label: 'Last 30 days', value: '30d' },
   { label: 'Last 7 days', value: '7d' },
   { label: 'Today', value: '1d' },
+  { label: 'Custom range', value: 'custom' },
 ]
 
-function sinceParam(value) {
-  const now = new Date()
-  if (value === '1d') {
-    const d = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-    return d.toISOString()
+function getDateParams(dateFilter, customFrom, customTo) {
+  const params = {}
+  if (dateFilter === 'custom') {
+    if (customFrom) params.since = new Date(customFrom).toISOString()
+    if (customTo) {
+      const d = new Date(customTo)
+      d.setHours(23, 59, 59, 999)
+      params.until = d.toISOString()
+    }
+    return params
   }
-  if (value === '7d') {
+  const now = new Date()
+  if (dateFilter === '1d') {
+    const d = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    params.since = d.toISOString()
+  } else if (dateFilter === '7d') {
     const d = new Date(now)
     d.setDate(d.getDate() - 7)
-    return d.toISOString()
+    params.since = d.toISOString()
   }
-  return undefined
+  return params
 }
 
 function formatDateTime(value) {
@@ -39,6 +50,17 @@ function formatDateTime(value) {
       month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
     })
   } catch { return value }
+}
+
+function fmtDuration(s) {
+  if (s == null) return '—'
+  if (s < 60) return `${Math.round(s)}s`
+  return `${Math.floor(s / 60)}m ${Math.round(s % 60)}s`
+}
+
+function fmtCost(cents) {
+  if (cents == null) return '—'
+  return `$${(cents / 100).toFixed(2)}`
 }
 
 function StatCard({ label, value, sub }) {
@@ -55,6 +77,50 @@ function SectionTitle({ children }) {
   return <h2 className="activity-section-title">{children}</h2>
 }
 
+function DistList({ items, total, barClass }) {
+  if (!items || items.length === 0) return null
+  return (
+    <div className="dist-list">
+      {items.map((item, i) => {
+        const label = item.value ?? item.label ?? item.name ?? `item-${i}`
+        const count = item.count ?? 0
+        const pct = total > 0 ? (count / total) * 100 : 0
+        return (
+          <div key={String(label) + i} className="dist-row">
+            <span className="dist-label">{String(label).replace(/_/g, ' ')}</span>
+            <div className="dist-bar-bg">
+              <div className={`dist-bar-fill${barClass ? ` ${barClass}` : ''}`} style={{ width: `${pct}%` }} />
+            </div>
+            <span className="dist-count">{count}</span>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function Sparkline({ points }) {
+  if (!points || points.length < 2) return null
+  const W = 600
+  const H = 60
+  const pad = 4
+  const vals = points.map(p => p.calls)
+  const max = Math.max(...vals, 1)
+  const xs = points.map((_, i) => pad + (i / (points.length - 1)) * (W - 2 * pad))
+  const ys = vals.map(v => H - pad - (v / max) * (H - 2 * pad))
+  const line = xs.map((x, i) => `${x},${ys[i]}`).join(' ')
+  const fill = [`${xs[0]},${H}`, ...xs.map((x, i) => `${x},${ys[i]}`), `${xs[xs.length - 1]},${H}`].join(' ')
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ width: '100%', height: '60px', display: 'block' }}>
+      <polygon points={fill} fill="#2563eb" opacity="0.07" />
+      <polyline points={line} fill="none" stroke="#2563eb" strokeWidth="1.5" strokeLinejoin="round" />
+      {vals.map((v, i) => v > 0 && (
+        <circle key={i} cx={xs[i]} cy={ys[i]} r="3" fill="#2563eb" />
+      ))}
+    </svg>
+  )
+}
+
 function AuditRow({ event }) {
   const actor = event.api_key_id
     ? `key · ${event.api_key_id.slice(0, 8)}`
@@ -68,11 +134,33 @@ function AuditRow({ event }) {
         <code className="audit-action">{event.action || '—'}</code>
       </td>
       <td className="audit-cell">{event.resource_type || '—'}</td>
-      <td className="audit-cell audit-cell-mono">{event.resource_id?.slice(0, 12) ?? '—'}</td>
+      <td className="audit-cell audit-cell-mono" title={event.resource_id ?? ''}>
+        {event.resource_id ?? '—'}
+      </td>
       <td className="audit-cell audit-cell-actor">{actor}</td>
       <td className="audit-cell audit-cell-time">{formatDateTime(event.created_at)}</td>
     </tr>
   )
+}
+
+function exportCsv(events) {
+  const headers = ['Action', 'Resource Type', 'Resource ID', 'Actor', 'Time']
+  const rows = events.map(e => {
+    const actor = e.api_key_id
+      ? `key·${e.api_key_id.slice(0, 8)}`
+      : e.user_id ? `user·${e.user_id.slice(0, 8)}` : ''
+    return [e.action || '', e.resource_type || '', e.resource_id || '', actor, e.created_at || '']
+      .map(v => `"${String(v).replace(/"/g, '""')}"`)
+      .join(',')
+  })
+  const csv = [headers.join(','), ...rows].join('\n')
+  const blob = new Blob([csv], { type: 'text/csv' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `audit-events-${new Date().toISOString().slice(0, 10)}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
 }
 
 export default function Activity() {
@@ -81,17 +169,23 @@ export default function Activity() {
   const [apiKey, setApiKey] = useState(getActiveApiKey())
   const [apiKeyInput, setApiKeyInput] = useState('')
   const [dateFilter, setDateFilter] = useState('30d')
+  const [customFrom, setCustomFrom] = useState('')
+  const [customTo, setCustomTo] = useState('')
   const [tab, setTab] = useState('summary')
 
   const [summary, setSummary] = useState(null)
   const [summaryLoading, setSummaryLoading] = useState(false)
   const [summaryError, setSummaryError] = useState('')
+  const [timeseries, setTimeseries] = useState([])
+  const [knownActions, setKnownActions] = useState([])
 
   const [events, setEvents] = useState([])
   const [eventsLoading, setEventsLoading] = useState(false)
   const [eventsError, setEventsError] = useState('')
   const [actorFilter, setActorFilter] = useState('all')
-  // cursors[i] is the cursor to use to fetch page i+1 (cursors[0]=null for page 1)
+  const [actionFilter, setActionFilter] = useState('all')
+  const [autoRefresh, setAutoRefresh] = useState(false)
+  const autoRefreshRef = useRef(null)
   const [cursors, setCursors] = useState([null])
   const [currentPage, setCurrentPage] = useState(1)
   const [hasMore, setHasMore] = useState(false)
@@ -115,26 +209,31 @@ export default function Activity() {
     if (!apiKey) return
     setSummaryLoading(true)
     setSummaryError('')
-    const params = {}
-    const since = sinceParam(dateFilter)
-    if (since) params.since = since
-    getActivitySummary(params)
-      .then((raw) => setSummary(raw))
+    const dateParams = getDateParams(dateFilter, customFrom, customTo)
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone
+    Promise.all([
+      getActivitySummary(dateParams),
+      getActivityTimeseries({ bucket: 'day', tz, ...dateParams }),
+    ])
+      .then(([raw, tsData]) => {
+        setSummary(raw)
+        if (Array.isArray(raw?.known_actions)) setKnownActions(raw.known_actions)
+        setTimeseries(Array.isArray(tsData?.points) ? tsData.points : [])
+      })
       .catch((e) => {
         if (e.status === 401) { handleInvalidKey(); return }
         setSummaryError(e.message)
       })
       .finally(() => setSummaryLoading(false))
-  }, [apiKey, dateFilter, handleInvalidKey])
+  }, [apiKey, dateFilter, customFrom, customTo, handleInvalidKey])
 
   const fetchEventsPage = useCallback((cursor, targetPage) => {
     if (!apiKey) return
     setEventsLoading(true)
     setEventsError('')
-    const params = { limit: PAGE_LIMIT }
-    const since = sinceParam(dateFilter)
-    if (since) params.since = since
+    const params = { limit: PAGE_LIMIT, ...getDateParams(dateFilter, customFrom, customTo) }
     if (actorFilter === 'me') params.actor = 'me'
+    if (actionFilter !== 'all') params.action = actionFilter
     if (cursor) params.cursor = cursor
     listAuditEvents(params)
       .then((data) => {
@@ -154,7 +253,7 @@ export default function Activity() {
         setEventsError(e.message)
       })
       .finally(() => setEventsLoading(false))
-  }, [apiKey, dateFilter, actorFilter])
+  }, [apiKey, dateFilter, customFrom, customTo, actorFilter, actionFilter, handleInvalidKey])
 
   const fetchEvents = useCallback(() => {
     setCursors([null])
@@ -171,10 +270,19 @@ export default function Activity() {
     fetchEventsPage(cursors[currentPage - 2] ?? null, currentPage - 1)
   }, [fetchEventsPage, cursors, currentPage])
 
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (tab === 'summary') fetchSummary()
     else fetchEvents()
   }, [tab, fetchSummary, fetchEvents])
+  /* eslint-enable react-hooks/set-state-in-effect */
+
+  useEffect(() => {
+    if (autoRefresh && tab === 'events') {
+      autoRefreshRef.current = setInterval(fetchEvents, 30000)
+    }
+    return () => clearInterval(autoRefreshRef.current)
+  }, [autoRefresh, tab, fetchEvents])
 
   const handleSaveApiKey = () => {
     const k = apiKeyInput.trim()
@@ -201,8 +309,15 @@ export default function Activity() {
   const resources = summary?.resource_counts || {}
   const callSummary = summary?.call_summary || {}
   const byStatus = Array.isArray(callSummary.by_status) ? callSummary.by_status : []
+  const byDirection = Array.isArray(callSummary.by_direction) ? callSummary.by_direction : []
+  const byOutcome = Array.isArray(callSummary.by_outcome) ? callSummary.by_outcome : []
+  const byEndReason = Array.isArray(callSummary.by_end_reason) ? callSummary.by_end_reason : []
+  const callMetrics = summary?.call_metrics || {}
+  const byAgent = Array.isArray(summary?.by_agent) ? summary.by_agent : []
   const auditActions = Array.isArray(summary?.audit_actions) ? summary.audit_actions : []
   const errorSignals = summary?.error_signals || {}
+
+  const activeSparkPoints = timeseries.filter(p => p.calls > 0)
 
   return (
     <div className="page">
@@ -232,12 +347,10 @@ export default function Activity() {
 
         <h1 className="page-title">Activity</h1>
 
-        {/* Revoked-key error sits above the key entry form */}
         {!apiKey && summaryError && (
           <p className="error banner" style={{ marginBottom: '1rem' }}>{summaryError}</p>
         )}
 
-        {/* API Key Banner */}
         {!apiKey ? (
           <div className="card" style={{ marginBottom: '1.5rem' }}>
             <p className="muted" style={{ margin: '0 0 0.75rem' }}>
@@ -282,26 +395,79 @@ export default function Activity() {
             </button>
           </div>
 
-          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
             {tab === 'events' && (
-              <select
-                className="filter-select"
-                value={actorFilter}
-                onChange={(e) => setActorFilter(e.target.value)}
-              >
-                <option value="all">All actors</option>
-                <option value="me">This API key only</option>
-              </select>
+              <>
+                <select
+                  className="filter-select"
+                  value={actorFilter}
+                  onChange={(e) => setActorFilter(e.target.value)}
+                >
+                  <option value="all">All actors</option>
+                  <option value="me">This API key only</option>
+                </select>
+                {knownActions.length > 0 && (
+                  <select
+                    className="filter-select"
+                    value={actionFilter}
+                    onChange={(e) => setActionFilter(e.target.value)}
+                  >
+                    <option value="all">All actions</option>
+                    {knownActions.map(a => (
+                      <option key={a} value={a}>{a}</option>
+                    ))}
+                  </select>
+                )}
+              </>
             )}
             <select
               className="filter-select"
               value={dateFilter}
-              onChange={(e) => setDateFilter(e.target.value)}
+              onChange={(e) => { setDateFilter(e.target.value); setCustomFrom(''); setCustomTo('') }}
             >
               {DATE_OPTIONS.map((o) => (
                 <option key={o.value} value={o.value}>{o.label}</option>
               ))}
             </select>
+            {dateFilter === 'custom' && (
+              <>
+                <input
+                  type="date"
+                  className="date-input"
+                  value={customFrom}
+                  max={customTo || undefined}
+                  onChange={(e) => setCustomFrom(e.target.value)}
+                />
+                <span className="muted" style={{ fontSize: '0.75rem' }}>to</span>
+                <input
+                  type="date"
+                  className="date-input"
+                  value={customTo}
+                  min={customFrom || undefined}
+                  onChange={(e) => setCustomTo(e.target.value)}
+                />
+              </>
+            )}
+            {tab === 'events' && (
+              <>
+                <button
+                  type="button"
+                  className={`btn ghost sm${autoRefresh ? ' btn-active' : ''}`}
+                  onClick={() => setAutoRefresh(v => !v)}
+                  title="Auto-refresh every 30s"
+                >
+                  {autoRefresh ? '⏸ Auto' : '▶ Auto'}
+                </button>
+                <button
+                  type="button"
+                  className="btn ghost sm"
+                  onClick={() => exportCsv(events)}
+                  disabled={events.length === 0}
+                >
+                  Export CSV
+                </button>
+              </>
+            )}
             <button
               type="button"
               className="btn ghost sm"
@@ -329,14 +495,16 @@ export default function Activity() {
                   <StatCard label="Tools" value={resources.tools} />
                   <StatCard label="Credentials" value={resources.credentials} />
                   <StatCard label="API Keys" value={resources.api_keys} />
+                  {resources.users != null && (
+                    <StatCard label="Users" value={resources.users} />
+                  )}
                 </div>
 
                 <SectionTitle>Calls</SectionTitle>
                 <div className="stat-grid">
                   <StatCard label="Total Calls" value={callSummary.total} />
                   {byStatus.map((s, i) => {
-                    const label = s.status ?? s.name ?? s.value ?? s.label ??
-                      Object.keys(s).find((k) => k !== 'count') ?? 'unknown'
+                    const label = s.status ?? s.value ?? s.name ?? `status-${i}`
                     return (
                       <StatCard
                         key={String(label) + i}
@@ -347,6 +515,106 @@ export default function Activity() {
                     )
                   })}
                 </div>
+
+                {(callMetrics.minutes != null || callMetrics.cost_cents != null) && (
+                  <>
+                    <SectionTitle>Call Metrics</SectionTitle>
+                    <div className="stat-grid">
+                      {callMetrics.minutes != null && (
+                        <StatCard label="Minutes Used" value={Number(callMetrics.minutes).toFixed(1)} />
+                      )}
+                      {callMetrics.cost_cents != null && (
+                        <StatCard label="Carrier Cost" value={fmtCost(callMetrics.cost_cents)} sub="Twilio / carrier" />
+                      )}
+                      {callMetrics.avg_duration_seconds != null && (
+                        <StatCard label="Avg Duration" value={fmtDuration(callMetrics.avg_duration_seconds)} />
+                      )}
+                      {callMetrics.p50_duration_seconds != null && (
+                        <StatCard label="P50 Duration" value={fmtDuration(callMetrics.p50_duration_seconds)} />
+                      )}
+                      {callMetrics.p95_duration_seconds != null && (
+                        <StatCard label="P95 Duration" value={fmtDuration(callMetrics.p95_duration_seconds)} />
+                      )}
+                      {callMetrics.max_duration_seconds != null && (
+                        <StatCard label="Max Duration" value={fmtDuration(callMetrics.max_duration_seconds)} />
+                      )}
+                    </div>
+                  </>
+                )}
+
+                {byDirection.length > 0 && (
+                  <>
+                    <SectionTitle>Direction</SectionTitle>
+                    <DistList items={byDirection} total={callSummary.total} />
+                  </>
+                )}
+
+                {byOutcome.length > 0 && (
+                  <>
+                    <SectionTitle>Outcomes</SectionTitle>
+                    <DistList items={byOutcome} total={callSummary.total} barClass="dist-bar-green" />
+                  </>
+                )}
+
+                {byEndReason.length > 0 && (
+                  <>
+                    <SectionTitle>End Reasons</SectionTitle>
+                    <DistList items={byEndReason} total={callSummary.total} barClass="dist-bar-amber" />
+                  </>
+                )}
+
+                {timeseries.length > 1 && (
+                  <>
+                    <SectionTitle>Calls Over Time</SectionTitle>
+                    <div className="sparkline-card">
+                      <div className="sparkline-title">Daily call volume</div>
+                      <Sparkline points={timeseries} />
+                      {activeSparkPoints.length > 0 && (
+                        <div className="sparkline-legend">
+                          {activeSparkPoints.slice(-4).map(p => (
+                            <span key={p.bucket_start} className="sparkline-legend-item">
+                              {new Date(p.bucket_start).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                              {' '}<strong>{p.calls}</strong>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )}
+
+                {byAgent.length > 0 && (
+                  <>
+                    <SectionTitle>By Agent</SectionTitle>
+                    <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+                      <div style={{ overflowX: 'auto' }}>
+                        <table className="agent-table">
+                          <thead>
+                            <tr>
+                              <th className="agent-th">Agent</th>
+                              <th className="agent-th">Calls</th>
+                              <th className="agent-th">Minutes</th>
+                              <th className="agent-th">Avg Duration</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {byAgent.map(a => (
+                              <tr key={a.agent_id} className="agent-row">
+                                <td className="agent-cell agent-cell-name">
+                                  {a.agent_name || a.agent_id}
+                                  {!a.is_active && <span className="agent-inactive"> · deleted</span>}
+                                </td>
+                                <td className="agent-cell">{a.calls}</td>
+                                <td className="agent-cell">{a.minutes != null ? Number(a.minutes).toFixed(1) : '—'}</td>
+                                <td className="agent-cell">{fmtDuration(a.avg_duration_seconds)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </>
+                )}
 
                 <SectionTitle>Audit Actions</SectionTitle>
                 <div className="audit-actions-grid">
@@ -431,7 +699,9 @@ export default function Activity() {
                   </button>
                   <span className="audit-page-label">
                     Page {currentPage}
-                    {actorFilter === 'me' ? ' · this key only' : ''}
+                    {actorFilter === 'me' ? ' · this key' : ''}
+                    {actionFilter !== 'all' ? ` · ${actionFilter}` : ''}
+                    {autoRefresh ? ' · live' : ''}
                   </span>
                   <button
                     type="button"

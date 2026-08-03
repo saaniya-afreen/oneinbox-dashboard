@@ -1400,3 +1400,198 @@ form input:focus {
     align-items: flex-start;
   }
 }
+
+/* ── Sparkline ───────────────────────────── */
+.sparkline-card {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  padding: 1rem 1.25rem;
+  margin-bottom: 0.5rem;
+}
+
+.sparkline-title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 0.75rem;
+}
+
+.sparkline-legend {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-top: 0.5rem;
+}
+
+.sparkline-legend-item {
+  font-size: 0.75rem;
+  color: #6b7280;
+}
+
+.sparkline-legend-item strong {
+  color: #2563eb;
+}
+
+/* ── Agent table ─────────────────────────── */
+.agent-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+  min-width: 420px;
+}
+
+.agent-th {
+  text-align: left;
+  padding: 0.625rem 1rem;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: #f9fafb;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.agent-row:hover {
+  background: #f9fafb;
+}
+
+.agent-cell {
+  padding: 0.625rem 1rem;
+  border-bottom: 1px solid #f3f4f6;
+  color: #374151;
+  vertical-align: middle;
+  font-variant-numeric: tabular-nums;
+}
+
+.agent-cell-name {
+  font-weight: 500;
+}
+
+.agent-inactive {
+  font-size: 0.75rem;
+  color: #9ca3af;
+  font-weight: 400;
+}
+
+/* ── Distribution bars ───────────────────── */
+.dist-list {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  padding: 0.75rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.dist-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.dist-label {
+  font-size: 0.8125rem;
+  color: #374151;
+  width: 120px;
+  flex-shrink: 0;
+  text-transform: capitalize;
+}
+
+.dist-bar-bg {
+  flex: 1;
+  height: 8px;
+  background: #f3f4f6;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.dist-bar-fill {
+  height: 100%;
+  background: #2563eb;
+  border-radius: 4px;
+  transition: width 0.3s ease;
+  min-width: 2px;
+}
+
+.dist-bar-green {
+  background: #16a34a;
+}
+
+.dist-bar-amber {
+  background: #d97706;
+}
+
+.dist-count {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #374151;
+  min-width: 2.5rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Date range inputs ───────────────────── */
+.date-input {
+  height: 36px;
+  padding: 0 0.75rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  color: #374151;
+  background: #fff;
+  outline: none;
+  cursor: pointer;
+}
+
+.date-input:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37,99,235,0.1);
+}
+
+/* ── Active toggle button ────────────────── */
+.btn.btn-active {
+  background: #eff6ff;
+  color: #2563eb;
+  border-color: #bfdbfe;
+}
+
+/* ── API key banner ──────────────────────── */
+.api-key-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 1rem;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+}
+
+.btn.sm {
+  padding: 0.25rem 0.625rem;
+  font-size: 0.8125rem;
+}
+
+.error.banner {
+  padding: 0.75rem 1rem;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 10px;
+  color: #dc2626;
+  font-size: 0.875rem;
+}
+
+@media (max-width: 600px) {
+  .dist-label {
+    width: 80px;
+  }
+
+  .stat-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
