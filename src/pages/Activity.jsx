@@ -510,6 +510,16 @@ export default function Activity() {
                 <SectionTitle>Calls</SectionTitle>
                 <div className="stat-grid">
                   <StatCard label="Total Calls" value={callSummary.total} />
+                  {callMetrics.answer_rate != null && (
+                    <StatCard
+                      label="Answer Rate"
+                      value={`${(callMetrics.answer_rate * 100).toFixed(1)}%`}
+                      sub={callMetrics.answered != null ? `${callMetrics.answered} answered` : null}
+                    />
+                  )}
+                  {callMetrics.avg_time_to_answer_seconds != null && (
+                    <StatCard label="Avg Time to Answer" value={`${Math.round(callMetrics.avg_time_to_answer_seconds)}s`} />
+                  )}
                   {byStatus.map((s, i) => {
                     const label = s.status ?? s.value ?? s.name ?? `status-${i}`
                     return (
